@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "buildCommand": "",
+  "outputDirectory": "public",
+  "functions": {
+    "api/forbes.js": {
+      "maxDuration": 30
+    }
+  }
+}
