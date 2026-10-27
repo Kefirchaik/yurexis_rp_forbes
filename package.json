@@ -1,0 +1,16 @@
+{
+  "name": "crmp-forbes",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vercel dev",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "mysql2": "^3.15.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
