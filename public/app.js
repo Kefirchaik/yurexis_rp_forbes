@@ -1,5 +1,32 @@
 let data=[],page=0,loading=false;const size=20,$=id=>document.getElementById(id);const money=n=>new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0}).format(n)+' ₽';const short=n=>new Intl.NumberFormat('ru-RU',{notation:'compact',maximumFractionDigits:2}).format(n)+' ₽';
 const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function render(){const search=$('search').value.trim().toLowerCase(),key=$('sort').value;const all=data.filter(p=>p.name.toLowerCase().includes(search)||String(p.id)===search).sort((a,b)=>(key==='bankTotal'?b.bank+b.deposits-a.bank-a.deposits:b[key]-a[key])||a.id-b.id);page=Math.min(page,Math.max(0,Math.ceil(all.length/size)-1));$('rows').innerHTML=all.slice(page*size,(page+1)*size).map((p,i)=>`<tr class="${p.rank<=3?'podium':''}"><td>${String(p.rank).padStart(2,'0')}</td><td>${escape(p.name)}<small>ID ${p.id} · УРОВЕНЬ ${p.level}</small></td><td>${money(p.cash)}</td><td>${money(p.bank+p.deposits)}</td><td>${money(p.total)}</td><td><button data-id="${p.id}" aria-label="Подробнее об игроке ${escape(p.name)}">↗</button></td></tr>`).join('')||'<tr><td colspan="6">Игроки не найдены</td></tr>';$('range').textContent=all.length?`${page*size+1}–${Math.min((page+1)*size,all.length)} из ${all.length}`:'0 игроков';$('prev').disabled=!page;$('next').disabled=(page+1)*size>=all.length;}
-async function load(){if(loading)return;loading=true;$('refresh').disabled=true;try{let r=await fetch('/api/forbes');let d;if(r.ok){d=await r.json();$('notice').textContent='Данные обновляются автоматически раз в минуту. Банковский режим: '+({both:'основной банк + отдельные счета',accounts:'основной банк',separate:'отдельные счета'}[d.bankMode]||d.bankMode);}else{const err=await r.json().catch(()=>({}));r=await fetch('/snapshot.json');if(!r.ok)throw Error('Не удалось загрузить данные');d=await r.json();$('notice').textContent='Данные игроков не загружены. Настройте подключение к MySQL в Vercel. '+(err.error||'Живое подключение недоступно.');}if(!Array.isArray(d.players))throw Error('Некорректный ответ');data=d.players.map((p,i)=>({...p,rank:i+1}));$('source').textContent=d.source==='live'?'● Живая база данных':'◷ Снимок SQL-файла';$('updated').textContent=d.updatedAt?'Обновлено: '+new Date(d.updatedAt).toLocaleString('ru-RU'):'Дата снимка не указана';$('capital').textContent=short(data.reduce((s,p)=>s+p.total,0));$('count').textContent=data.length;$('leader').textContent=data.length?short(data[0].total):'—';render();}catch(e){$('notice').textContent='Ошибка загрузки. Попробуйте обновить страницу.';}finally{loading=false;$('refresh').disabled=false;}}
+async function load(){
+ if(loading)return;
+ loading=true;$('refresh').disabled=true;
+ try{
+  const r=await fetch('/api/forbes');
+  const d=await r.json();
+  if(!r.ok || !Array.isArray(d.players))throw new Error('unavailable');
+  data=d.players.map((p,i)=>({...p,rank:i+1}));
+  $('source').textContent='● Данные обновлены';
+  $('updated').textContent=d.updatedAt?'Обновлено: '+new Date(d.updatedAt).toLocaleString('ru-RU'):'';
+  $('notice').textContent='';
+  $('capital').textContent=short(data.reduce((s,p)=>s+p.total,0));
+  $('count').textContent=data.length;
+  $('leader').textContent=data.length?short(data[0].total):'—';
+  $('search').disabled=false;$('sort').disabled=false;
+  render();
+ }catch(e){
+  data=[];page=0;
+  $('source').textContent='Временно недоступно';
+  $('updated').textContent='';
+  $('notice').textContent='Не удалось загрузить рейтинг. Попробуйте обновить позже.';
+  for(const id of ['capital','count','leader'])$(id).textContent='—';
+  $('rows').innerHTML='<tr><td colspan="6">Рейтинг временно недоступен</td></tr>';
+  $('range').textContent='';
+  $('prev').disabled=true;$('next').disabled=true;
+  $('search').disabled=true;$('sort').disabled=true;
+ }finally{loading=false;$('refresh').disabled=false;}
+}
 $('search').oninput=$('sort').onchange=()=>{page=0;render()};$('prev').onclick=()=>{page--;render()};$('next').onclick=()=>{page++;render()};$('refresh').onclick=load;$('close').onclick=()=>$('dialog').close();$('rows').onclick=e=>{const b=e.target.closest('button[data-id]');if(!b)return;const p=data.find(p=>p.id===Number(b.dataset.id));$('detail').innerHTML=`<div class="eyebrow">№ ${p.rank} В ОБЩЕМ РЕЙТИНГЕ</div><h2>${escape(p.name)}</h2><p>ID ${p.id} · Уровень ${p.level}</p>`+[['Наличные',p.cash],['Основной банк',p.bank],['Отдельные счета',p.deposits],['Кассы бизнеса и АЗС',p.business],['Общий капитал',p.total]].map(([k,v])=>`<div class="breakdown"><span>${k}</span><strong>${money(v)}</strong></div>`).join('')+`<p>Дома: ${p.houses} · Транспорт: ${p.cars} · Бизнесы и АЗС: ${p.businesses}</p><p>Стоимость домов по БД: ${money(p.houseValue)}. В капитал не включена.</p>`;$('dialog').showModal()};$('method').onclick=()=>{$('detail').innerHTML='<div class="eyebrow">МЕТОДОЛОГИЯ</div><h2>Откуда берутся цифры</h2><p>Наличные: accounts.money. Основной банк: accounts.bank. Отдельные счета: сумма bank_accounts.balance по uid. Кассы бизнеса: business.balance и fuel_stations.balance по owner_id.</p><p>Общий капитал — сумма этих денежных остатков. Режим банка и включение касс настраиваются владельцем сервера. Пока логика игрового мода не проверена, основной банк и отдельные счета могут частично дублироваться.</p><p>Цена домов показана отдельно. Семейная казна, криптовалюта, донат, резервы аукциона, ожидающие выплаты и исторические денежные логи не включены: их нельзя автоматически приравнять к личным рублям.</p><p>Статус online из дампа не используется как показатель текущего онлайна. Сайт показывает только публичную игровую статистику.</p>';$('dialog').showModal()};load();setInterval(load,60000);
